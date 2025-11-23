@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova O.S. - Auto Center 86</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .bg-os { background-color: #e9ecef; }
+        .card-total { background-color: #212529; color: #fff; }
+    </style>
+</head>
+<body class="bg-os">
+
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="index.html"><i class="bi bi-arrow-left"></i> Voltar ao Painel</a>
+            <span class="navbar-text text-white fw-bold">Nova Ordem de Serviço</span>
+        </div>
+    </nav>
+
+    <div class="container pb-5">
+        <div class="row">
+            
+            <div class="col-md-4">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header bg-primary text-white"><i class="bi bi-person"></i> 1. Cliente e Veículo</div>
+                    <div class="card-body">
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Selecione o Cliente</label>
+                            <select id="selectCliente" class="form-select" onchange="carregarCarrosDoCliente()">
+                                <option value="">Carregando...</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Selecione o Veículo</label>
+                            <select id="selectVeiculo" class="form-select" disabled>
+                                <option value="">Escolha um cliente primeiro</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Descrição do Problema / Obs</label>
+                            <textarea id="descricaoProblema" class="form-control" rows="3" placeholder="Ex: Cliente reclama de barulho na suspensão..."></textarea>
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="card card-total shadow">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-muted mb-0">TOTAL ESTIMADO</h5>
+                        <h1 class="display-4 fw-bold" id="displayTotal">R$ 0,00</h1>
+                        <button onclick="finalizarOS()" class="btn btn-success btn-lg w-100 mt-3 fw-bold">
+                            <i class="bi bi-check-circle-fill"></i> FINALIZAR O.S.
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-warning text-dark">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-tools"></i> 2. Serviços a Realizar</span>
+                        </div>
+                    </div>
+                    <div class="card-body bg-light">
+                        
+                        <div class="row g-2 align-items-end mb-4 border-bottom pb-4">
+                            <div class="col-md-6">
+                                <label class="small text-muted">Serviço</label>
+                                <select id="selectServicoCatalogo" class="form-select" onchange="atualizarPrecoInput()">
+                                    <option value="">Selecione...</option>
+                                    </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="small text-muted">Preço (R$)</label>
+                                <input type="number" id="inputPreco" class="form-control" step="0.01">
+                            </div>
+                            <div class="col-md-3">
+                                <button onclick="adicionarItem()" class="btn btn-dark w-100">
+                                    <i class="bi bi-plus-lg"></i> Adicionar
+                                </button>
+                            </div>
+                        </div>
+
+                        <h6 class="text-muted text-uppercase small ls-1">Itens na Ordem de Serviço</h6>
+                        <table class="table table-bordered bg-white">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Serviço</th>
+                                    <th width="150">Valor (R$)</th>
+                                    <th width="50">#</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaItens">
+                                </tbody>
+                        </table>
+                        
+                        <div id="avisoListaVazia" class="text-center text-muted py-5">
+                            <i class="bi bi-basket display-4"></i>
+                            <p class="mt-2">Nenhum serviço adicionado ainda.</p>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // CONFIGURAÇÃO SUPABASE (AUTOMÁTICA)
+        const supabaseUrl = 'https://vfqjjbtewrmnyzyzhrif.supabase.co'
+        const supabaseKey = 'sb_publishable_mNQJ_RqCldWrEXigUxW4Qg_5QufcVJX'
+        const _supabase = supabase.createClient(supabaseUrl, supabaseKey)
+
+        // VARIÁVEIS GLOBAIS
+        let listaServicosCatalogo = []; // Guarda todos os serviços do banco
+        let carrinhoItens = []; // Guarda os itens que estamos adicionando na OS atual
+
+        // 1. INICIALIZAÇÃO (Carrega clientes e serviços)
+        async function init() {
+            carregarClientes();
+            carregarCatalogoServicos();
+        }
+
+        // 2. CARREGAR CLIENTES
+        async function carregarClientes() {
+            const { data } = await _supabase.from('clientes').select('*').order('nome');
+            const select = document.getElementById('selectCliente');
+            select.innerHTML = '<option value="">Selecione...</option>';
+            data.forEach(c => {
+                select.innerHTML += `<option value="${c.id}">${c.nome}</option>`;
+            });
+        }
+
+        // 3. CARREGAR CARROS (Quando escolhe cliente)
+        async function carregarCarrosDoCliente() {
+            const clienteId = document.getElementById('selectCliente').value;
+            const selectCarro = document.getElementById('selectVeiculo');
+            
+            selectCarro.innerHTML = '<option value="">Carregando...</option>';
+            selectCarro.disabled = true;
+
+            if(!clienteId) return;
+
+            const { data } = await _supabase.from('veiculos').select('*').eq('cliente_id', clienteId);
+            
+            selectCarro.innerHTML = '<option value="">Selecione o veículo...</option>';
+            if(data.length > 0) {
+                data.forEach(v => {
+                    selectCarro.innerHTML += `<option value="${v.id}">${v.modelo} - ${v.placa}</option>`;
+                });
+                selectCarro.disabled = false;
+            } else {
+                selectCarro.innerHTML = '<option>Nenhum veículo encontrado para este cliente</option>';
+            }
+        }
+
+        // 4. CARREGAR CATALOGO DE SERVIÇOS
+        async function carregarCatalogoServicos() {
+            const { data } = await _supabase.from('servicos').select('*').order('nome');
+            listaServicosCatalogo = data; // Guarda na memória
+
+            const select = document.getElementById('selectServicoCatalogo');
+            data.forEach(s => {
+                select.innerHTML += `<option value="${s.id}">${s.nome}</option>`;
+            });
+        }
+
+        // 5. ATUALIZAR INPUT DE PREÇO (Quando escolhe um serviço no dropdown)
+        function atualizarPrecoInput() {
+            const servicoId = document.getElementById('selectServicoCatalogo').value;
+            const servico = listaServicosCatalogo.find(s => s.id == servicoId);
+            
+            if(servico) {
+                document.getElementById('inputPreco').value = servico.preco_padrao;
+            } else {
+                document.getElementById('inputPreco').value = '';
+            }
+        }
+
+        // 6. ADICIONAR ITEM AO "CARRINHO"
+        function adicionarItem() {
+            const servicoId = document.getElementById('selectServicoCatalogo').value;
+            const preco = parseFloat(document.getElementById('inputPreco').value);
+            
+            if(!servicoId || isNaN(preco)) {
+                alert("Selecione um serviço e confira o preço.");
+                return;
+            }
+
+            const servicoOriginal = listaServicosCatalogo.find(s => s.id == servicoId);
+
+            // Adiciona ao array do carrinho
+            carrinhoItens.push({
+                servico_id: servicoId,
+                nome: servicoOriginal.nome,
+                preco: preco
+            });
+
+            renderizarCarrinho();
+        }
+
+        // 7. DESENHAR A TABELA DE ITENS
+        function renderizarCarrinho() {
+            const tbody = document.getElementById('tabelaItens');
+            const aviso = document.getElementById('avisoListaVazia');
+            const displayTotal = document.getElementById('displayTotal');
+
+            tbody.innerHTML = '';
+            let total = 0;
+
+            if(carrinhoItens.length > 0) {
+                aviso.style.display = 'none';
+                carrinhoItens.forEach((item, index) => {
+                    total += item.preco;
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${item.nome}</td>
+                            <td>R$ ${item.preco.toFixed(2)}</td>
+                            <td><button onclick="removerItem(${index})" class="btn btn-sm btn-danger">X</button></td>
+                        </tr>
+                    `;
+                });
+            } else {
+                aviso.style.display = 'block';
+            }
+
+            displayTotal.innerText = total.toLocaleString('pt-br', {style: 'currency', currency: 'BRL'});
+        }
+
+        function removerItem(index) {
+            carrinhoItens.splice(index, 1);
+            renderizarCarrinho();
+        }
+
+        // 8. FINALIZAR (SALVAR TUDO NO BANCO)
+        async function finalizarOS() {
+            const veiculoId = document.getElementById('selectVeiculo').value;
+            const obs = document.getElementById('descricaoProblema').value;
+            
+            // Validações Básicas
+            if(!veiculoId) return alert("Por favor, selecione um Veículo.");
+            if(carrinhoItens.length === 0) return alert("Adicione pelo menos um serviço.");
+
+            // Passo A: Criar a O.S. principal
+            // Calcula o total somando o array
+            const valorTotal = carrinhoItens.reduce((acc, item) => acc + item.preco, 0);
+
+            const { data: osData, error: osError } = await _supabase
+                .from('ordens_servico')
+                .insert([{
+                    veiculo_id: veiculoId,
+                    descricao_problema: obs,
+                    valor_total: valorTotal,
+                    status: 'Aberto'
+                }])
+                .select(); // O .select() é importante para retornar o ID da nova OS
+
+            if(osError) return alert("Erro ao criar OS: " + osError.message);
+
+            const novaOSId = osData[0].id; // Pegamos o ID da OS que acabou de ser criada
+
+            // Passo B: Salvar os itens linkados nessa OS
+            // Preparamos os dados para salvar tudo de uma vez
+            const itensParaSalvar = carrinhoItens.map(item => ({
+                os_id: novaOSId,
+                servico_id: item.servico_id,
+                preco_praticado: item.preco
+            }));
+
+            const { error: itensError } = await _supabase
+                .from('os_itens')
+                .insert(itensParaSalvar);
+
+            if(itensError) {
+                alert("OS criada, mas erro nos itens: " + itensError.message);
+            } else {
+                alert("✅ Ordem de Serviço criada com sucesso!");
+                window.location.href = 'index.html'; // Volta para o início
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
