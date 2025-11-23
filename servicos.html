@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Serviços - Auto Center 86</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        body { background-color: #f8f9fa; }
+        .card-dash { border: none; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .header-bg { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="#"><i class="bi bi-wrench-adjustable"></i> Auto Center 86</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="index.html">Clientes</a></li>
+                    <li class="nav-item"><a class="nav-link" href="veiculos.html">Veículos</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="servicos.html">Serviços (Preços)</a></li>
+                    <li class="nav-item"><a class="nav-link text-warning" href="nova_os.html"><b>+ Nova O.S.</b></a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="header-bg text-center pt-4">
+        <h2>Catálogo de Serviços</h2>
+        <p>Gerencie os preços padrão da oficina</p>
+    </div>
+
+    <div class="container mt-n4" style="margin-top: -30px;">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card card-dash p-3 mb-3">
+                    <h5 class="mb-3"><i class="bi bi-plus-circle"></i> Novo Serviço</h5>
+                    <form id="formServico">
+                        <div class="mb-2">
+                            <label class="small text-muted">Nome do Serviço</label>
+                            <input type="text" id="nome" class="form-control" placeholder="Ex: Alinhamento 3D" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="small text-muted">Descrição (Opcional)</label>
+                            <input type="text" id="descricao" class="form-control" placeholder="Detalhes...">
+                        </div>
+                        <div class="mb-3">
+                            <label class="small text-muted">Preço Padrão (R$)</label>
+                            <input type="number" step="0.01" id="preco" class="form-control" placeholder="0.00" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Adicionar ao Catálogo</button>
+                    </form>
+                    <div id="mensagem" class="mt-2"></div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card card-dash p-3">
+                    <h5 class="mb-3"><i class="bi bi-list-ul"></i> Serviços Cadastrados</h5>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Serviço</th>
+                                    <th>Descrição</th>
+                                    <th>Preço Base</th>
+                                    <th class="text-end">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaServicos">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- SUAS CHAVES ---
+        const supabaseUrl = 'https://vfqjjbtewrmnyzyzhrif.supabase.co'
+        const supabaseKey = 'sb_publishable_mNQJ_RqCldWrEXigUxW4Qg_5QufcVJX'
+        const _supabase = supabase.createClient(supabaseUrl, supabaseKey)
+
+        // 1. SALVAR SERVIÇO
+        document.getElementById('formServico').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const nome = document.getElementById('nome').value;
+            const descricao = document.getElementById('descricao').value;
+            const preco = document.getElementById('preco').value;
+
+            const { error } = await _supabase
+                .from('servicos')
+                .insert([{ nome, descricao, preco_padrao: preco }])
+
+            if (error) {
+                alert('Erro: ' + error.message);
+            } else {
+                document.getElementById('formServico').reset();
+                carregarServicos();
+            }
+        });
+
+        // 2. LISTAR SERVIÇOS
+        async function carregarServicos() {
+            const { data, error } = await _supabase
+                .from('servicos')
+                .select('*')
+                .order('nome', { ascending: true })
+
+            const tbody = document.getElementById('tabelaServicos');
+            tbody.innerHTML = '';
+
+            if (data) {
+                data.forEach(servico => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td class="fw-bold">${servico.nome}</td>
+                            <td class="text-muted small">${servico.descricao || '-'}</td>
+                            <td class="text-success fw-bold">R$ ${parseFloat(servico.preco_padrao).toFixed(2)}</td>
+                            <td class="text-end">
+                                <button onclick="deletarServico(${servico.id})" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+
+        // 3. DELETAR
+        async function deletarServico(id) {
+            if(confirm('Tem certeza que deseja apagar este serviço?')) {
+                await _supabase.from('servicos').delete().eq('id', id);
+                carregarServicos();
+            }
+        }
+
+        carregarServicos();
+    </script>
+</body>
+</html>
