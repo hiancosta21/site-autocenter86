@@ -1,1 +1,292 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editar O.S. - Auto Center 86</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .bg-edit { background-color: #fff8e1; } /* Um fundo amarelado suave para indicar Edição */
+    </style>
+</head>
+<body class="bg-edit">
 
+    <nav class="navbar navbar-dark bg-warning mb-4 shadow-sm">
+        <div class="container">
+            <a class="navbar-brand text-dark fw-bold" href="historico.html"><i class="bi bi-arrow-left"></i> Cancelar e Voltar</a>
+            <span class="navbar-text text-dark fw-bold">EDITANDO ORDEM #<span id="displayIdOS">...</span></span>
+        </div>
+    </nav>
+
+    <div class="container pb-5">
+        <div class="row">
+            
+            <div class="col-md-4">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header bg-dark text-white">Dados do Veículo</div>
+                    <div class="card-body">
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Cliente</label>
+                            <select id="selectCliente" class="form-select" disabled>
+                                <option>Carregando...</option>
+                            </select>
+                            <small class="text-muted">*Não é possível mudar o dono na edição.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Veículo</label>
+                            <select id="selectVeiculo" class="form-select">
+                                <option>Carregando...</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Descrição / Obs</label>
+                            <textarea id="descricaoProblema" class="form-control" rows="5"></textarea>
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="card shadow">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-muted mb-0">NOVO TOTAL</h5>
+                        <h1 class="display-4 fw-bold text-primary" id="displayTotal">R$ 0,00</h1>
+                        <button onclick="salvarAlteracoes()" class="btn btn-primary btn-lg w-100 mt-3 fw-bold">
+                            <i class="bi bi-save"></i> SALVAR ALTERAÇÕES
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-white border-bottom">
+                        <h5 class="mb-0">Serviços e Peças</h5>
+                    </div>
+                    <div class="card-body">
+                        
+                        <div class="row g-2 align-items-end mb-4 border-bottom pb-4">
+                            <div class="col-md-6">
+                                <label class="small text-muted">Adicionar Serviço</label>
+                                <select id="selectServicoCatalogo" class="form-select" onchange="atualizarPrecoInput()">
+                                    <option value="">Selecione...</option>
+                                    </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="small text-muted">Preço (R$)</label>
+                                <input type="number" id="inputPreco" class="form-control" step="0.01">
+                            </div>
+                            <div class="col-md-3">
+                                <button onclick="adicionarItem()" class="btn btn-success w-100">
+                                    <i class="bi bi-plus-lg"></i> Incluir
+                                </button>
+                            </div>
+                        </div>
+
+                        <table class="table table-bordered bg-white">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Serviço</th>
+                                    <th width="150">Valor (R$)</th>
+                                    <th width="50">#</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaItens">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // SUAS CREDENCIAIS AUTOMÁTICAS
+        const supabaseUrl = 'https://vfqjjbtewrmnyzyzhrif.supabase.co'
+        const supabaseKey = 'sb_publishable_mNQJ_RqCldWrEXigUxW4Qg_5QufcVJX'
+        const _supabase = supabase.createClient(supabaseUrl, supabaseKey)
+
+        // Variáveis Globais
+        let idOS = null;
+        let carrinhoItens = []; 
+        let listaServicosCatalogo = [];
+
+        // 1. INICIALIZAÇÃO
+        async function init() {
+            // Pega o ID da URL (?id=123)
+            const params = new URLSearchParams(window.location.search);
+            idOS = params.get('id');
+
+            if(!idOS) {
+                alert("Nenhuma O.S. selecionada!");
+                window.location.href = 'historico.html';
+                return;
+            }
+
+            document.getElementById('displayIdOS').innerText = idOS;
+
+            // Carrega catálogos primeiro
+            await carregarCatalogoServicos();
+            // Depois carrega os dados da OS
+            await carregarDadosOS();
+        }
+
+        // 2. CARREGAR DADOS DA OS EXISTENTE
+        async function carregarDadosOS() {
+            // Busca OS + Veiculo + Cliente + Itens Já Salvos
+            const { data, error } = await _supabase
+                .from('ordens_servico')
+                .select(`
+                    *,
+                    veiculos ( id, modelo, placa, cliente_id, clientes (id, nome) ),
+                    os_itens ( servicos (id, nome), preco_praticado, servico_id )
+                `)
+                .eq('id', idOS)
+                .single(); // Traz apenas 1 resultado
+
+            if(error) {
+                alert("Erro ao carregar O.S.: " + error.message);
+                return;
+            }
+
+            // A. Preencher campos básicos
+            document.getElementById('descricaoProblema').value = data.descricao_problema;
+            
+            // B. Preencher Cliente (Apenas visual, desabilitado)
+            const selectCliente = document.getElementById('selectCliente');
+            selectCliente.innerHTML = `<option value="${data.veiculos.clientes.id}">${data.veiculos.clientes.nome}</option>`;
+
+            // C. Preencher Veículo (Carrega os carros desse cliente e seleciona o certo)
+            await carregarCarrosDoCliente(data.veiculos.cliente_id, data.veiculo_id);
+
+            // D. Preencher o "Carrinho" com os itens que vieram do banco
+            // Atenção: O formato que vem do banco é um pouco diferente do carrinho, vamos converter
+            if(data.os_itens) {
+                carrinhoItens = data.os_itens.map(item => ({
+                    servico_id: item.servico_id,
+                    nome: item.servicos ? item.servicos.nome : 'Serviço (Nome indisponível)',
+                    preco: item.preco_praticado
+                }));
+            }
+            renderizarCarrinho();
+        }
+
+        // 3. CARREGAR CARROS E SELECIONAR O ATUAL
+        async function carregarCarrosDoCliente(clienteId, veiculoAtualId) {
+            const { data } = await _supabase.from('veiculos').select('*').eq('cliente_id', clienteId);
+            const selectCarro = document.getElementById('selectVeiculo');
+            selectCarro.innerHTML = '';
+            
+            data.forEach(v => {
+                const selected = (v.id === veiculoAtualId) ? 'selected' : '';
+                selectCarro.innerHTML += `<option value="${v.id}" ${selected}>${v.modelo} - ${v.placa}</option>`;
+            });
+        }
+
+        // 4. CARREGAR CATÁLOGO (Igual na Nova OS)
+        async function carregarCatalogoServicos() {
+            const { data } = await _supabase.from('servicos').select('*').order('nome');
+            listaServicosCatalogo = data;
+            const select = document.getElementById('selectServicoCatalogo');
+            data.forEach(s => {
+                select.innerHTML += `<option value="${s.id}">${s.nome}</option>`;
+            });
+        }
+
+        function atualizarPrecoInput() {
+            const servicoId = document.getElementById('selectServicoCatalogo').value;
+            const servico = listaServicosCatalogo.find(s => s.id == servicoId);
+            if(servico) document.getElementById('inputPreco').value = servico.preco_padrao;
+        }
+
+        // 5. MANIPULAÇÃO DO CARRINHO (Adicionar/Remover na memória)
+        function adicionarItem() {
+            const servicoId = document.getElementById('selectServicoCatalogo').value;
+            const preco = parseFloat(document.getElementById('inputPreco').value);
+            
+            if(!servicoId || isNaN(preco)) return alert("Verifique o serviço e preço.");
+
+            const servicoOriginal = listaServicosCatalogo.find(s => s.id == servicoId);
+
+            carrinhoItens.push({
+                servico_id: servicoId,
+                nome: servicoOriginal.nome,
+                preco: preco
+            });
+            renderizarCarrinho();
+        }
+
+        function removerItem(index) {
+            carrinhoItens.splice(index, 1);
+            renderizarCarrinho();
+        }
+
+        function renderizarCarrinho() {
+            const tbody = document.getElementById('tabelaItens');
+            const displayTotal = document.getElementById('displayTotal');
+            tbody.innerHTML = '';
+            let total = 0;
+
+            carrinhoItens.forEach((item, index) => {
+                total += item.preco;
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${item.nome}</td>
+                        <td>R$ ${item.preco.toFixed(2)}</td>
+                        <td><button onclick="removerItem(${index})" class="btn btn-sm btn-outline-danger">X</button></td>
+                    </tr>
+                `;
+            });
+            displayTotal.innerText = total.toLocaleString('pt-br', {style: 'currency', currency: 'BRL'});
+        }
+
+        // 6. SALVAR ALTERAÇÕES (A Mágica)
+        async function salvarAlteracoes() {
+            if(carrinhoItens.length === 0) return alert("A O.S. não pode ficar vazia.");
+
+            const veiculoId = document.getElementById('selectVeiculo').value;
+            const obs = document.getElementById('descricaoProblema').value;
+            const valorTotal = carrinhoItens.reduce((acc, item) => acc + item.preco, 0);
+
+            // PASSO 1: Atualizar dados principais da OS
+            const { error: erroOS } = await _supabase
+                .from('ordens_servico')
+                .update({ 
+                    veiculo_id: veiculoId, 
+                    descricao_problema: obs, 
+                    valor_total: valorTotal 
+                })
+                .eq('id', idOS);
+
+            if(erroOS) return alert("Erro ao atualizar cabeçalho: " + erroOS.message);
+
+            // PASSO 2: Atualizar Itens (Estratégia: Apaga tudo e insere de novo)
+            // A. Deletar antigos
+            await _supabase.from('os_itens').delete().eq('os_id', idOS);
+
+            // B. Inserir novos (que estão no carrinho agora)
+            const itensParaSalvar = carrinhoItens.map(item => ({
+                os_id: idOS,
+                servico_id: item.servico_id,
+                preco_praticado: item.preco
+            }));
+
+            const { error: erroItens } = await _supabase.from('os_itens').insert(itensParaSalvar);
+
+            if(erroItens) {
+                alert("Erro ao salvar itens novos: " + erroItens.message);
+            } else {
+                alert("✅ Alterações Salvas!");
+                window.location.href = 'historico.html';
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
