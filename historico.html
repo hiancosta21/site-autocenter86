@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Histórico - Auto Center 86</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .card-kpi { border: none; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .status-aberto { background-color: #fff3cd; color: #856404; }
+        .status-finalizado { background-color: #d4edda; color: #155724; }
+    </style>
+</head>
+<body class="bg-light">
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="index.html">Auto Center 86</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="nova_os.html">+ Nova O.S.</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap">
+            <h3 class="fw-bold"><i class="bi bi-clock-history"></i> Histórico de O.S.</h3>
+            
+            <div class="d-flex align-items-center bg-white p-2 rounded shadow-sm">
+                <span class="me-2 text-muted fw-bold">Filtrar Mês:</span>
+                <input type="month" id="filtroMes" class="form-control" style="width: 180px;">
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card card-kpi bg-primary text-white h-100">
+                    <div class="card-body">
+                        <h6 class="text-uppercase opacity-75">Faturamento (Mês)</h6>
+                        <h2 class="fw-bold mb-0" id="kpiFaturamento">R$ 0,00</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card card-kpi bg-white h-100">
+                    <div class="card-body">
+                        <h6 class="text-uppercase text-muted">Total de Ordens</h6>
+                        <h2 class="fw-bold mb-0 text-dark" id="kpiQtdOS">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card card-kpi bg-white h-100">
+                    <div class="card-body">
+                        <h6 class="text-uppercase text-muted">Ticket Médio</h6>
+                        <h2 class="fw-bold mb-0 text-success" id="kpiTicket">R$ 0,00</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-0">
+                <div class="accordion accordion-flush" id="listaOS">
+                    <div class="text-center p-5 text-muted">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">Carregando histórico...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- SUAS CREDENCIAIS ---
+        const supabaseUrl = 'https://vfqjjbtewrmnyzyzhrif.supabase.co'
+        const supabaseKey = 'sb_publishable_mNQJ_RqCldWrEXigUxW4Qg_5QufcVJX'
+        const _supabase = supabase.createClient(supabaseUrl, supabaseKey)
+
+        // 1. CONFIGURAR DATA INICIAL (Mês Atual)
+        const inputMes = document.getElementById('filtroMes');
+        const hoje = new Date();
+        // Formata para YYYY-MM (ex: 2023-11)
+        inputMes.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+
+        // Evento: Quando mudar a data, recarrega
+        inputMes.addEventListener('change', carregarHistorico);
+
+        // 2. FUNÇÃO PRINCIPAL: Carregar Dados
+        async function carregarHistorico() {
+            const dataSelecionada = inputMes.value; // ex: "2023-11"
+            const [ano, mes] = dataSelecionada.split('-');
+
+            // Calcular primeiro e último dia do mês para o filtro
+            const dataInicio = new Date(ano, mes - 1, 1).toISOString();
+            const dataFim = new Date(ano, mes, 0, 23, 59, 59).toISOString();
+
+            // BUSCA NO BANCO (JOIN TRIPLO: OS -> Veiculo -> Cliente)
+            // Também busca os ITENS (serviços) dessa OS
+            const { data: ordens, error } = await _supabase
+                .from('ordens_servico')
+                .select(`
+                    *,
+                    veiculos ( modelo, placa, clientes ( nome ) ),
+                    os_itens ( preco_praticado, servicos ( nome ) )
+                `)
+                .gte('created_at', dataInicio) // Maior ou igual dia 1
+                .lte('created_at', dataFim)    // Menor ou igual dia 31
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                alert("Erro ao buscar histórico: " + error.message);
+                return;
+            }
+
+            renderizarTela(ordens);
+        }
+
+        // 3. RENDERIZAR (Atualizar o HTML)
+        function renderizarTela(lista) {
+            const container = document.getElementById('listaOS');
+            const kpiFaturamento = document.getElementById('kpiFaturamento');
+            const kpiQtd = document.getElementById('kpiQtdOS');
+            const kpiTicket = document.getElementById('kpiTicket');
+
+            container.innerHTML = '';
+
+            let totalFaturamento = 0;
+            
+            if (lista.length === 0) {
+                container.innerHTML = '<div class="p-5 text-center text-muted">Nenhuma O.S. encontrada neste mês.</div>';
+                kpiFaturamento.innerText = 'R$ 0,00';
+                kpiQtd.innerText = '0';
+                kpiTicket.innerText = 'R$ 0,00';
+                return;
+            }
+
+            lista.forEach((os, index) => {
+                totalFaturamento += os.valor_total;
+                
+                // Formatação de data bonita (DD/MM/YYYY)
+                const dataOS = new Date(os.created_at).toLocaleDateString('pt-BR');
+                
+                // Tratamento de erros caso cliente tenha sido excluído
+                const nomeCliente = os.veiculos?.clientes?.nome || 'Cliente Desconhecido';
+                const modeloCarro = os.veiculos ? `${os.veiculos.modelo} (${os.veiculos.placa})` : 'Veículo Excluído';
+
+                // HTML de cada Item (Serviço) dentro da OS
+                let htmlItens = '';
+                if(os.os_itens && os.os_itens.length > 0) {
+                    os.os_itens.forEach(item => {
+                        const nomeServico = item.servicos ? item.servicos.nome : 'Serviço antigo';
+                        htmlItens += `<li class="d-flex justify-content-between border-bottom py-1">
+                            <span>${nomeServico}</span>
+                            <strong>R$ ${item.preco_praticado.toFixed(2)}</strong>
+                        </li>`;
+                    });
+                }
+
+                // Renderiza o Card (Accordion)
+                container.innerHTML += `
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="heading${os.id}">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse${os.id}">
+                            <div class="row w-100 align-items-center">
+                                <div class="col-md-2 text-muted small">${dataOS} <br> <strong>#${os.id}</strong></div>
+                                <div class="col-md-4 fw-bold text-dark">${nomeCliente}</div>
+                                <div class="col-md-3 small">${modeloCarro}</div>
+                                <div class="col-md-2 fw-bold text-success text-end">R$ ${os.valor_total.toFixed(2)}</div>
+                            </div>
+                        </button>
+                    </h2>
+                    <div id="collapse${os.id}" class="accordion-collapse collapse" data-bs-parent="#listaOS">
+                        <div class="accordion-body bg-light">
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <h6 class="small fw-bold text-muted">SERVIÇOS REALIZADOS:</h6>
+                                    <ul class="list-unstyled mb-3 bg-white p-3 rounded border">
+                                        ${htmlItens}
+                                    </ul>
+                                    <p class="small text-muted"><strong>Obs:</strong> ${os.descricao_problema || 'Nenhuma observação.'}</p>
+                                </div>
+                                <div class="col-md-4 d-flex flex-column justify-content-center border-start ps-4">
+                                    
+                                    <h5 class="mb-3">Ações</h5>
+                                    
+                                    <a href="editar_os.html?id=${os.id}" class="btn btn-primary mb-2">
+                                        <i class="bi bi-pencil-square"></i> Editar / Corrigir
+                                    </a>
+
+                                    <button onclick="excluirOS(${os.id})" class="btn btn-outline-danger btn-sm">
+                                        <i class="bi bi-trash"></i> Excluir Registro
+                                    </button>
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+
+            // Atualiza os Cards do Topo
+            kpiFaturamento.innerText = totalFaturamento.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+            kpiQtd.innerText = lista.length;
+            const ticketMedio = totalFaturamento / lista.length;
+            kpiTicket.innerText = ticketMedio.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        }
+
+        // 4. FUNÇÃO EXCLUIR
+        async function excluirOS(id) {
+            if(confirm("ATENÇÃO: Isso vai apagar a O.S. e remover o valor do faturamento. Tem certeza?")) {
+                const { error } = await _supabase.from('ordens_servico').delete().eq('id', id);
+                if(error) {
+                    alert('Erro ao excluir: ' + error.message);
+                } else {
+                    carregarHistorico(); // Recarrega a tela
+                }
+            }
+        }
+
+        // Inicia
+        carregarHistorico();
+
+    </script>
+</body>
+</html>
